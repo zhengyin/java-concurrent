@@ -13,8 +13,8 @@ public class FixMultiThreadIssue {
     private static volatile int COUNTER = 0;
     private static final int MAX_VALUE = 10;
     public static void main(String[] args){
-    //    changeAndWatch();
-    //    changeAndWatch2();
+        changeAndWatch();
+        changeAndWatch2();
         reorder();
     }
 
