@@ -103,7 +103,7 @@ public class MultiThreadIssue {
 
 ![JMM管理区域](img/jmm-controll.jpg)
 
-> 这个图描述的意思是，每个线程都有自己的一块本地内存，然后呢还有一块共享内存区域，而本地内存与共享内存直接的桥梁就JMM控制的区域了。
+> 这个图描述的意思是，每个线程都有自己的一块本地内存，然后多个线程同时还有一块共享内存区域，而本地内存与共享内存之间的桥梁就JMM控制的区域了。
 
 #### JMM是通过什么原则控制的呢？  happens-before
 > 以下摘自《Java并发编程》 一书
@@ -122,7 +122,7 @@ public class MultiThreadIssue {
 
 #### 同步原语 ， synchronized,volatile
 > 通过对happens-before的描述，里面提到了一些控制原则，而在这些原则中我们可以通过代码进行修饰的叫做同步原语，
-> 下面我们就通过这两个同步源于修改 MultiThreadIssue 使其能够正常的运行。
+> 下面我们就通过这两个同步原语修改 MultiThreadIssue 使其能够正常的运行。
 ``` 
 package com.izhengyin.demo.concurrent.part2;
 
@@ -139,8 +139,8 @@ public class FixMultiThreadIssue {
     private static volatile int COUNTER = 0;
     private static final int MAX_VALUE = 10;
     public static void main(String[] args){
-    //    changeAndWatch();
-    //    changeAndWatch2();
+        changeAndWatch();
+        changeAndWatch2();
         reorder();
     }
 
