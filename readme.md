@@ -105,7 +105,6 @@ public class MultiThreadIssue {
 ![JMM管理区域](img/jmm-controll.jpg)
 
 > 这个图描述的意思是，每个线程都有自己的一块本地内存，然后多个线程同时还有一块共享内存区域，而本地内存与共享内存之间的桥梁就JMM控制的区域了。
-
 > 这个特点和CPU高速缓存很像 [计算机组成原理-高速缓存](https://time.geekbang.org/column/article/109331?utm_campaign=guanwang&utm_source=baidu-ad&utm_medium=ppzq-pc&utm_content=title&utm_term=baidu-ad-ppzq-title)
 
 #### JMM是通过什么原则控制的呢？  happens-before
