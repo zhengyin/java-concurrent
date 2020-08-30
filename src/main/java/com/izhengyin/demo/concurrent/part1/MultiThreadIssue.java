@@ -1,7 +1,10 @@
 package com.izhengyin.demo.concurrent.part1;
 import com.izhengyin.demo.concurrent.SleepUtils;
+
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 
 /**
@@ -20,6 +23,7 @@ public class MultiThreadIssue {
      * 2. watch2 能够正常检查到值的变化
      */
     private static void changeAndWatch(){
+        CountDownLatch countDownLatch = new CountDownLatch(2);
         ExecutorService executor = Executors.newFixedThreadPool(2);
         // change
         executor.execute(() -> {
@@ -28,6 +32,7 @@ public class MultiThreadIssue {
                         COUNTER = i;
                         SleepUtils.sleep(100);
                     });
+            countDownLatch.countDown();
         });
 
         // watch 1
@@ -39,7 +44,13 @@ public class MultiThreadIssue {
                     threadValue = COUNTER;
                 }
             }
+            countDownLatch.countDown();
         });
+        try {
+            countDownLatch.await(5000, TimeUnit.MILLISECONDS);
+        }catch (InterruptedException e){
+            e.printStackTrace();
+        }
         executor.shutdown();
     }
 
@@ -53,8 +64,9 @@ public class MultiThreadIssue {
                 .forEach(i -> {
                     ReorderExample example = new ReorderExample();
                     executor.execute(example::write);
-                    executor.execute(example::print);
+                    executor.execute(example::read);
                 });
+        SleepUtils.sleep(5000);
         executor.shutdown();
     }
 
@@ -68,7 +80,7 @@ public class MultiThreadIssue {
             a = 1;
             flag = true;
         }
-        public void print(){
+        public void read(){
             if(flag){
                 if(a != 1){
                     System.out.println("get wrong value , a != 1 ");

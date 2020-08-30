@@ -2,8 +2,10 @@ package com.izhengyin.demo.concurrent.part2;
 
 import com.izhengyin.demo.concurrent.SleepUtils;
 
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 
 /**
@@ -13,15 +15,16 @@ public class FixMultiThreadIssue {
     private static volatile int COUNTER = 0;
     private static final int MAX_VALUE = 10;
     public static void main(String[] args){
-        changeAndWatch();
+    //    changeAndWatch();
         changeAndWatch2();
-        reorder();
+    //    reorder();
     }
 
     /**
      * 将变量设置为 volatile 能够正常检查到值的变化
      */
     private static void changeAndWatch(){
+        CountDownLatch countDownLatch = new CountDownLatch(2);
         ExecutorService executor = Executors.newFixedThreadPool(3);
         // change
         executor.execute(() -> {
@@ -30,6 +33,7 @@ public class FixMultiThreadIssue {
                         COUNTER = i;
                         SleepUtils.sleep(100);
                     });
+            countDownLatch.countDown();
         });
 
         // watch 1
@@ -41,7 +45,13 @@ public class FixMultiThreadIssue {
                     threadValue = COUNTER;
                 }
             }
+            countDownLatch.countDown();
         });
+        try {
+            countDownLatch.await(5000, TimeUnit.MILLISECONDS);
+        }catch (InterruptedException e){
+            e.printStackTrace();
+        }
         executor.shutdown();
     }
 
@@ -49,16 +59,16 @@ public class FixMultiThreadIssue {
      * 通过 synchronized watch1 也可以正常检查到值的变化
      */
     private static void changeAndWatch2(){
+        CountDownLatch countDownLatch = new CountDownLatch(2);
         ExecutorService executor = Executors.newFixedThreadPool(2);
         // change
         executor.execute(() -> {
             IntStream.rangeClosed(0,MAX_VALUE)
                     .forEach(i -> {
-                        synchronized (FixMultiThreadIssue.class){
                             COUNTER = i;
-                        }
                         SleepUtils.sleep(100);
                     });
+            countDownLatch.countDown();
         });
 
         // watch 1
@@ -72,7 +82,13 @@ public class FixMultiThreadIssue {
                     }
                 }
             }
+            countDownLatch.countDown();
         });
+        try {
+            countDownLatch.await(5000, TimeUnit.MILLISECONDS);
+        }catch (InterruptedException e){
+            e.printStackTrace();
+        }
         executor.shutdown();
     }
 
@@ -86,7 +102,7 @@ public class FixMultiThreadIssue {
                 .forEach(i -> {
                     ReorderExample example = new ReorderExample();
                     executor.execute(example::write);
-                    executor.execute(example::print);
+                    executor.execute(example::read);
                 });
         executor.shutdown();
     }
@@ -101,7 +117,7 @@ public class FixMultiThreadIssue {
             a = 1;
             flag = true;
         }
-        public void print(){
+        public void read(){
             if(flag){
                 if(a != 1){
                     System.out.println("get wrong value , a != 1 ");

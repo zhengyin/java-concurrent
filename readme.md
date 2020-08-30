@@ -57,7 +57,7 @@ public class MultiThreadIssue {
                 .forEach(i -> {
                     ReorderExample example = new ReorderExample();
                     executor.execute(example::write);
-                    executor.execute(example::print);
+                    executor.execute(example::read);
                 });
         executor.shutdown();
     }
@@ -72,7 +72,7 @@ public class MultiThreadIssue {
             a = 1;
             flag = true;
         }
-        public void print(){
+        public void read(){
             if(flag){
                 if(a != 1){
                     System.out.println("get wrong value , a != 1 ");
@@ -212,7 +212,7 @@ public class FixMultiThreadIssue {
                 .forEach(i -> {
                     ReorderExample example = new ReorderExample();
                     executor.execute(example::write);
-                    executor.execute(example::print);
+                    executor.execute(example::read);
                 });
         executor.shutdown();
     }
@@ -227,7 +227,7 @@ public class FixMultiThreadIssue {
             a = 1;
             flag = true;
         }
-        public void print(){
+        public void read(){
             if(flag){
                 if(a != 1){
                     System.out.println("get wrong value , a != 1 ");
@@ -237,5 +237,63 @@ public class FixMultiThreadIssue {
     }
 }
 ```
+
+## 并发编程优化
+
+在之前的内容中我们提到了通过同步原语 synchronized,volatile 可以取禁止一些从排序从而保证了多线程编程下逻辑的正确性。
+但同时我们也提到了，JMM通过从排序来优化程序性能，因此可以想到  synchronized,volatile 是会对应用程序性能有损耗的，而且在一些场景下损耗还不小。
+首先我们先来认识一下volatile与synchronized。
+
+### volatile 
+
+#### Java语言规范第3版中对volatile的定义如下
+
+> Java编程语言允许线程访问共享变量，为了确保共享变量能被准确和一致地更新，线程应该确保通过排他锁单独获得这个变量。因此下面这段程序是错误的。
+
+```
+public class WrongUseVolatile {
+    private static volatile int counter = 0;
+    public static void main(String[] args){
+        ExecutorService executorService = Executors.newFixedThreadPool(10);
+        IntStream.rangeClosed(0,10000)
+                .forEach(i -> executorService.execute(WrongUseVolatile::inc));
+        SleepUtils.sleep(1000);
+        //结果并不一定等于 10000
+        System.out.println("counter -> "+counter);
+        executorService.shutdown();
+    }
+    private static void inc(){
+        counter ++;
+    }
+}
+```
+
+### volatile实现的2条原则
+
+1. Lock前缀指令会引起处理器缓存回写到内存。
+2. 一个处理器的缓存回写到内存会导致其他处理器的缓存无效。
+
+volatile的这两条原则我理解的就是让CPU如何和内存/缓存打交道,处理器使用MESI控制协议去维护内部缓存和其他处理器缓存的一致性。
+极客时间[计算机组成原理-MESI协议](https://time.geekbang.org/column/article/109874)专栏文章有详细的描述。
+
+### synchronized 
+
+> synchronized可以通过语义描述，实现自动加锁解锁的功能，对于synchronized ， Java中的每一个对象都可以作为锁，具体表现为以下3种形式。
+
+1. 对于普通同步方法，锁是当前实例对象。
+    ```
+    private synchronized void sync() {} 
+    ```
+2. 对于静态同步方法，锁是当前类的Class对象。
+    ```
+    private synchronized static void sync() {} 
+    ```
+3. 对于同步方法块，锁是 synchronized 括号里配置的对象。
+    ```
+    synchronized(object){}
+    ```
+
+Java SE 1.6为了减少获得锁和释放锁带来的性能消耗，引入了“偏向锁”和“轻量级锁”，在 Java SE 1.6中，锁一共有4种状态，级别从低到高依次是:无锁状态、偏向锁状态、轻量级锁状态和重量级锁状态，这几个状态会随着竞争情况逐渐升级。
+
 
 > 未完，待续
