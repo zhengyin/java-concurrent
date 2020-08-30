@@ -95,6 +95,7 @@ public class MultiThreadIssue {
 
 > 但是不管怎么排序，（单线程）程序的执行结果不能被改变。编译器、runtime和处理器都必须遵守as-if-serial语义。
 
+
 ### 如何去禁止这些排序？
 
 > 在考虑如何去禁止从排序时，我们先来看看是谁在管理这些从排序规则。
@@ -276,6 +277,36 @@ public class WrongUseVolatile {
 volatile的这两条原则我理解的就是让CPU如何和内存/缓存打交道,处理器使用MESI控制协议去维护内部缓存和其他处理器缓存的一致性。
 极客时间[计算机组成原理-MESI协议](https://time.geekbang.org/column/article/109874)专栏文章有详细的描述。
 
+#### 测试使用Volatile对应用性能的影响
+```
+public class VolatileTest {
+    private static volatile String v;
+    public static void main(String[] args){
+        ExecutorService executorService = Executors.newFixedThreadPool(100);
+        long sTime = System.currentTimeMillis();
+        int loop = 1000000;
+        IntStream.rangeClosed(0,loop)
+                .forEach(i -> {
+                    executorService.execute(() -> {
+                        //构建一个字符串，赋值给 volatile 变量
+                        int size = i % 1000;
+                        StringBuffer sb = new StringBuffer(size);
+                        IntStream.rangeClosed(0,size).forEach(sb::append);
+                        v = sb.toString();
+                        //打印耗时
+                        if(i == loop){
+                            System.out.println((System.currentTimeMillis() - sTime) +"ms");
+                        }
+                    });
+                });
+        SleepUtils.sleep(5000);
+        executorService.shutdown();
+    }
+}
+```
+
+执行100万次，在我电脑上（2017款iMac）相差300MS左右 , 折算到每次请求消耗不大。
+
 ### synchronized 
 
 > synchronized可以通过语义描述，实现自动加锁解锁的功能，对于synchronized ， Java中的每一个对象都可以作为锁，具体表现为以下3种形式。
@@ -295,5 +326,41 @@ volatile的这两条原则我理解的就是让CPU如何和内存/缓存打交�
 
 Java SE 1.6为了减少获得锁和释放锁带来的性能消耗，引入了“偏向锁”和“轻量级锁”，在 Java SE 1.6中，锁一共有4种状态，级别从低到高依次是:无锁状态、偏向锁状态、轻量级锁状态和重量级锁状态，这几个状态会随着竞争情况逐渐升级。
 
+#### 测试使用synchronized对应用性能的影响
+
+```
+public class SynchronizedTest {
+    public static void main(String[] args){
+        Map<String,Long> timeCounter = new HashMap<>(100);
+        CountDownLatch countDownLatch = new CountDownLatch(100);
+        ExecutorService executorService = Executors.newFixedThreadPool(100);
+        //执行100次
+        IntStream.rangeClosed(0,100)
+                .forEach(i -> {
+                    final String executeKey = "execute-"+i;
+                    timeCounter.put(executeKey,System.currentTimeMillis());
+                    executorService.execute(() -> {
+                        //每次执行都模拟100MS延迟
+                        calculate(100);
+                        //记录每一次执行的耗时
+                        System.out.println(executeKey+" -> "+(System.currentTimeMillis() - timeCounter.get(executeKey))+" ms");
+                        countDownLatch.countDown();
+                    });
+                });
+        try {
+            countDownLatch.await();
+        }catch (InterruptedException e){
+            e.printStackTrace();
+        }
+        executorService.shutdown();
+    }
+
+    private synchronized static void calculate(long delay){
+        SleepUtils.sleep(delay);
+    }
+}
+```
+
+程序运行完耗时，10000MS以上，可见对于加锁的方法,如果执行较慢对于性能影响是巨大的。
 
 > 未完，待续

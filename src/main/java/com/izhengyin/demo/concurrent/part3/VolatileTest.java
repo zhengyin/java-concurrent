@@ -33,6 +33,4 @@ public class VolatileTest {
         SleepUtils.sleep(5000);
         executorService.shutdown();
     }
-
-
 }
