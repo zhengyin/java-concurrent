@@ -14,7 +14,7 @@ public class WrongUseVolatile {
     private static volatile int counter = 0;
     public static void main(String[] args){
         ExecutorService executorService = Executors.newFixedThreadPool(10);
-        IntStream.rangeClosed(0,10000)
+        IntStream.rangeClosed(1,10000)
                 .forEach(i -> executorService.execute(WrongUseVolatile::inc));
         SleepUtils.sleep(1000);
         //结果并不一定等于 10000
