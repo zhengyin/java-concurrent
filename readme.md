@@ -392,7 +392,7 @@ public class SynchronizedTest {
 
 > Java中保证原子操作通过锁与循环CAS,而Java中的锁除了非常轻的偏向锁以外都是通过循环CAS来加锁的，因此我们要记住的就是循环CAS。
 
-#### 循环CAS 
+#### 什么是循环CAS？ 
 
 我们通过 AtomicInteger#getAndIncrement 方法来了解一下循环CAS
 
