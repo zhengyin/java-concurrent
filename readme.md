@@ -464,11 +464,160 @@ getAndIncrement调用 Unsafe.getAndAddInt 完成原子的 + 1 操作，传入三
 
 ![cas-loop](img/cas-loop.png)
 
+#### CAS存在的问题
 
+1. ABA问题
 
+    cas的ABA问题就是假设初始值为A，线程3和线程1都获取到了初始值A，然后线程1将A改为了B，线程2将B又改回了A，这时候线程3做修改时，是感知不到这个值从A改为了B又改回了A的过程。类似于下面这段伪代码
+    ``` 
+    final AtomicInteger atomicInteger = new AtomicInteger(1);
+    atomicInteger.compareAndSet(1,2)  A -> B
+    atomicInteger.compareAndSet(2,1)  B -> A
+    atomicInteger.compareAndSet(1,3)  A -> C (可能不会感知到 B -> A 的过程)
+    ```
+    
+2. 循环时间长开销大
 
+    自旋CAS如果长时间不成功，会给CPU带来非常大的执行开销。
 
+3. 只能保证一个共享变量的原子操作
 
+    通过上面的代码可以看到，CAS只能保证一个Int共享变量的操作。
+    
+    
+#### CAS存在的问题如何避免？
+
+1. 使用 AtomicStampedReference 增加版本号的方式来避免 ABA的问题
+    
+
+``` 
+public class CasABA {
+    public static void main(String[] args) throws InterruptedException{
+        System.out.println("abaProblem ");
+        abaProblem();
+        System.out.println("fixAbaProblem ");
+        fixAbaProblem();
+    }
+
+    /**
+     * 产生ABA问题的代码
+     * @throws InterruptedException
+     */
+    private static void abaProblem() throws InterruptedException{
+        ExecutorService executorService = Executors.newFixedThreadPool(2);
+        CountDownLatch countDownLatch = new CountDownLatch(2);
+        final AtomicInteger atomicInteger = new AtomicInteger(1);
+        executorService.execute(() -> {
+            System.out.println(atomicInteger.compareAndSet(1,2)+" -> "+atomicInteger.get());
+            System.out.println(atomicInteger.compareAndSet(2,1)+" -> "+atomicInteger.get());
+            countDownLatch.countDown();
+        });
+        executorService.execute(() -> {
+            SleepUtils.sleep(100);
+            System.out.println(atomicInteger.compareAndSet(1,3)+" -> "+atomicInteger.get());
+            countDownLatch.countDown();
+        });
+        countDownLatch.await();
+        executorService.shutdown();
+    }
+
+    /**
+     * 通过增加数据版本来避免ABA问题
+     * @throws InterruptedException
+     */
+    private static void fixAbaProblem() throws InterruptedException{
+        ExecutorService executorService = Executors.newFixedThreadPool(2);
+        CountDownLatch countDownLatch = new CountDownLatch(2);
+        final AtomicStampedReference<Integer> atomicInteger = new AtomicStampedReference<Integer>(1,0);
+        final int initStamp = atomicInteger.getStamp();
+        executorService.execute(() -> {
+            int stamp = initStamp;
+            System.out.println(atomicInteger.compareAndSet(1,2,stamp,++stamp) +" -> "+atomicInteger.getReference());
+            System.out.println(atomicInteger.compareAndSet(2,1,stamp,++stamp) +" -> "+atomicInteger.getReference());
+            countDownLatch.countDown();
+        });
+        executorService.execute(() -> {
+            int stamp = initStamp;
+            SleepUtils.sleep(100);
+            System.out.println(atomicInteger.compareAndSet(1,3,stamp,++stamp) +" -> "+atomicInteger.getReference());
+            countDownLatch.countDown();
+        });
+        countDownLatch.await();
+        executorService.shutdown();
+    }
+
+}
+```
+
+2. 循环时间长开销大
+
+    这个问题从编码上没有好的解决办法，在《java并发的艺术编程》jvm能支持处理器提供的pause指令，那么效率会有一定的提升。 这里有篇文章是对[ppause](https://blog.csdn.net/misterliwei/article/details/3951103)指令的描述。
+
+3. 可以通过对引用类型的更新来同时跟新多个值,注意比较交换时，比较的是引用对象的内存的地址而不是 equals ，下面的代码演示的这样的情况。
+    
+
+``` 
+package com.izhengyin.demo.concurrent.part5;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.ToString;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
+/**
+ * @author zhengyin zhengyinit@outlook.com
+ * Created on 2020-09-07 18:52
+ */
+public class AtomicReferenceTest {
+
+    public static void main(String[] args){
+        Coord coord = new Coord(1.1,5.1);
+
+        Coord newCoord = new Coord(2.1,6.1);
+        AtomicReference<Coord> coordAtomicReference1 = new AtomicReference<>(coord);
+        //成功
+        System.out.println("compareAndSet ["+coordAtomicReference1.compareAndSet(coord,newCoord)+"] , new value "+coordAtomicReference1.get());
+
+        Coord coord2 = new Coord(1.1,5.1);
+        AtomicReference<Coord> coordAtomicReference2 = new AtomicReference<>(coord);
+        //失败
+        System.out.println("compareAndSet ["+coordAtomicReference2.compareAndSet(coord2,newCoord)+"] , equals ["+(coord2.equals(coord))+"] , new value "+coordAtomicReference2.get());
+    }
+
+    @Data
+    @ToString
+    @AllArgsConstructor
+    private static class Coord {
+        private double x;
+        private double y;
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()){
+                return false;
+            }
+            Coord coord = (Coord) o;
+            return Double.compare(coord.x, x) == 0 &&
+                    Double.compare(coord.y, y) == 0;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(x, y);
+        }
+    }
+
+}
+
+```
+以上代码输出
+``` 
+compareAndSet [true] , new value AtomicReferenceTest.Coord(x=2.1, y=6.1)
+compareAndSet [false] , equals [true] , new value AtomicReferenceTest.Coord(x=1.1, y=5.1)
+```
 
 
 
