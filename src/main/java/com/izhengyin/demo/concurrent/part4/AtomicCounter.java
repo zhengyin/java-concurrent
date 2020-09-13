@@ -1,7 +1,6 @@
 package com.izhengyin.demo.concurrent.part4;
 
 import com.izhengyin.demo.concurrent.SleepUtils;
-
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -14,6 +13,7 @@ import java.util.stream.IntStream;
 public class AtomicCounter {
     private static final AtomicInteger atomicCounter = new AtomicInteger(0);
     public static void main(String[] args) {
+
         ExecutorService executorService = Executors.newFixedThreadPool(10);
         long sTime = System.currentTimeMillis();
         int loop = 1000000;
@@ -32,4 +32,8 @@ public class AtomicCounter {
         System.out.println("counter -> " + atomicCounter.get());
         executorService.shutdown();
     }
+
+
+
+
 }

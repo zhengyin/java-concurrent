@@ -364,25 +364,272 @@ public class SynchronizedTest {
 
 程序运行完耗时10000MS以上，可见对于加锁的方法,如果执行较慢对于性能影响是巨大的。因此加锁要慎重，如果只是可见性问题，用volatile会比synchronized好。
 
-## CAS （Conmpare And Swap）
+## CAS （Compare And Swap）
 
 在通过对同步原语的学习，实现一个线程安全的计数器，已经不是问题了。但是在现代多核CPU中实现counter ++ 可不容易。
+如果有一个变量 i = 1 , 我们进行两次 i ++ 的操作，期望结果是3，但是实际结果可能不一定,原因可能是两个CPU分别在自己的内部缓存区域相加。
+
+![Plus](img/plus-plus.png)
+
 
 ### 处理器如何实现原子操作
 
 1. 通过总线锁保证原子性
     * 通过LOCK#信号，阻塞其它CPU达到独占内存的目的
 2. 使用缓存锁保证原子性 
-    * 缓存一致性，MESI
+    * 缓存一致性，MESI协议
     
 在这两种方式中，第二种比第一种开销要小，那么CPU在什么情况下会不选择第二种呢？
 1. 当操作的数据不能被缓存在处理器内部，或操作的数据跨多个缓存行
    (cache line)时，则处理器会调用总线锁定。
 2. 有些处理器不支持缓存锁定。
 
-针对以上两个机制，通过Intel处理器提供了很多Lock前缀的指令来实现。例如，位测 试和修改指令:BTS、BTR、BTC;交换指令XADD、CMPXCHG，以及其他一些操作数和逻辑指 令(如ADD、OR)等，被这些指令操作的内存区域就会加锁，导致其他处理器不能同时访问它。
+针对以上两个机制，通过Intel处理器提供了很多Lock前缀的指令来实现。例如，位测试和修改指令:BTS、BTR、BTC;交换指令XADD、CMPXCHG，以及其他一些操作数和逻辑指令(如ADD、OR)等，被这些指令操作的内存区域就会加锁，导致其他处理器不能同时访问它。
+在我们今天的话题中，我们关注 CMPXCHG 这个指令, CPMXCHG 就是一个比较并交换指令，是CPU硬件支持的机器指令。
 
-> 在我们今天的话题中，我们关注 CMPXCHG 这个指令, CPMXCHG就是一个比较并交换指令，是CPU硬件支持的机器指令。
+
+### Java如何实现原子操作
+
+> Java中保证原子操作通过锁与循环CAS,而Java中的锁除了非常轻的偏向锁以外都是通过循环CAS来加锁的，因此我们要记住的就是循环CAS。
+
+#### 什么是循环CAS？ 
+
+我们通过 AtomicInteger#getAndIncrement 方法来了解一下循环CAS
+
+* getAndIncrement 定义
+
+getAndIncrement调用 Unsafe.getAndAddInt 完成原子的 + 1 操作，传入三个参数分别是，当前对象
+、valueOffset、1 。
+
+
+```
+    /**
+     * 原子的加 1
+     * @return 增加前的值
+     */
+    public final int getAndIncrement() {
+        return unsafe.getAndAddInt(this, valueOffset, 1);
+    }
+```
+
+第一个和第三个参数都很明显，我们来看下 valueOffset 是怎么获取的。
+
+
+```
+    ...
+    private static final long valueOffset;
+
+    static {
+        try {
+            valueOffset = unsafe.objectFieldOffset
+                (AtomicInteger.class.getDeclaredField("value"));
+        } catch (Exception ex) { throw new Error(ex); }
+    }
+
+    private volatile int value;
+    
+    ...
+```
+
+通过上面的代码可以看到，valueOffset通过Unsafe#objectFieldOffset获取的int变量value的内存地址偏移位，接下来在看下Unsafe#getAndAddInt方法的定义，通过方法的注释应该能够明白方法的含义。
+    
+``` 
+  /**
+     * 原子的将位于对象 o 内存偏移位 offset 处的 Int value 的值增加 delta
+     * @param o 对象
+     * @param offset (对象o的Int value)内存偏移位
+     * @param delta 增加的值
+     * @return 增加前的值
+     */
+    public final int getAndAddInt(Object o, long offset, int delta) {
+        int v;
+        do {
+            v = getIntVolatile(o, offset);
+        } while (!compareAndSwapInt(o, offset, v, v + delta));
+        return v;
+    }
+```
+根据上面的代码分析，我们来描述一下CAS自旋的过程。
+假设有两个线程同时对Value = 1 的值加1，那么它们的执行过程如下图。
+1. 线程A getIntVolatile 获取到 value = 1
+2. 线程B getIntVolatile 获取到 value = 1
+3. 线程A 调用 compareAndSwapInt 期望将  value = 1 的值设置为 2
+4. 线程B 调用 compareAndSwapInt 期望将  value = 1 的值设置为 2
+5. 线程A 通过调用 CMPXCHG 指令进行修改，此时 Value = 1 与线程A局部变量里的值一致，修改成功 ， Value 变为 2
+6. 线程B 通过调用 CMPXCHG 指令进行修改，此时 Value = 2 (因为Value已经被线程A修改为2) 与 线程A局部变量里的值不一致，修改失败
+7. 线程B while 进入下一次循环
+8. 线程B 由于Volatile的特性，通过 getIntVolatile 线程A可以立即获取到线程B修改的 value = 2 ；
+9. 线程B 调用 compareAndSwapInt 期望将  value = 2 的值设置为 3
+10. 线程B 通过调用 CMPXCHG 指令进行修改，此时 Value = 2 与线程B局部变量里的值一致，修改成功 ， Value 变为 2
+
+![cas-loop](img/cas-loop.png)
+
+#### CAS存在的问题
+
+1. ABA问题
+
+    cas的ABA问题就是假设初始值为A，线程3和线程1都获取到了初始值A，然后线程1将A改为了B，线程2将B又改回了A，这时候线程3做修改时，是感知不到这个值从A改为了B又改回了A的过程。类似于下面这段伪代码
+    ``` 
+    final AtomicInteger atomicInteger = new AtomicInteger(1);
+    atomicInteger.compareAndSet(1,2)  A -> B
+    atomicInteger.compareAndSet(2,1)  B -> A
+    atomicInteger.compareAndSet(1,3)  A -> C (可能不会感知到 B -> A 的过程)
+    ```
+    
+2. 循环时间长开销大
+
+    自旋CAS如果长时间不成功，会给CPU带来非常大的执行开销。
+
+3. 只能保证一个共享变量的原子操作
+
+    通过上面的代码可以看到，CAS只能保证一个Int共享变量的操作。
+    
+    
+#### CAS存在的问题如何避免？
+
+1. 使用 AtomicStampedReference 增加版本号的方式来避免 ABA的问题
+    
+
+``` 
+public class CasABA {
+    public static void main(String[] args) throws InterruptedException{
+        System.out.println("abaProblem ");
+        abaProblem();
+        System.out.println("fixAbaProblem ");
+        fixAbaProblem();
+    }
+
+    /**
+     * 产生ABA问题的代码
+     * @throws InterruptedException
+     */
+    private static void abaProblem() throws InterruptedException{
+        ExecutorService executorService = Executors.newFixedThreadPool(2);
+        CountDownLatch countDownLatch = new CountDownLatch(2);
+        final AtomicInteger atomicInteger = new AtomicInteger(1);
+        executorService.execute(() -> {
+            System.out.println(atomicInteger.compareAndSet(1,2)+" -> "+atomicInteger.get());
+            System.out.println(atomicInteger.compareAndSet(2,1)+" -> "+atomicInteger.get());
+            countDownLatch.countDown();
+        });
+        executorService.execute(() -> {
+            SleepUtils.sleep(100);
+            System.out.println(atomicInteger.compareAndSet(1,3)+" -> "+atomicInteger.get());
+            countDownLatch.countDown();
+        });
+        countDownLatch.await();
+        executorService.shutdown();
+    }
+
+    /**
+     * 通过增加数据版本来避免ABA问题
+     * @throws InterruptedException
+     */
+    private static void fixAbaProblem() throws InterruptedException{
+        ExecutorService executorService = Executors.newFixedThreadPool(2);
+        CountDownLatch countDownLatch = new CountDownLatch(2);
+        final AtomicStampedReference<Integer> atomicInteger = new AtomicStampedReference<Integer>(1,0);
+        final int initStamp = atomicInteger.getStamp();
+        executorService.execute(() -> {
+            int stamp = initStamp;
+            System.out.println(atomicInteger.compareAndSet(1,2,stamp,++stamp) +" -> "+atomicInteger.getReference());
+            System.out.println(atomicInteger.compareAndSet(2,1,stamp,++stamp) +" -> "+atomicInteger.getReference());
+            countDownLatch.countDown();
+        });
+        executorService.execute(() -> {
+            int stamp = initStamp;
+            SleepUtils.sleep(100);
+            System.out.println(atomicInteger.compareAndSet(1,3,stamp,++stamp) +" -> "+atomicInteger.getReference());
+            countDownLatch.countDown();
+        });
+        countDownLatch.await();
+        executorService.shutdown();
+    }
+
+}
+```
+
+2. 循环时间长开销大
+
+    这个问题从编码上没有好的解决办法，在《java并发的艺术编程》jvm能支持处理器提供的pause指令，那么效率会有一定的提升。 这里有篇文章是对[ppause](https://blog.csdn.net/misterliwei/article/details/3951103)指令的描述。
+
+3. 可以通过对引用类型的更新来同时跟新多个值,注意比较交换时，比较的是引用对象的内存的地址而不是 equals ，下面的代码演示的这样的情况。
+    
+
+``` 
+package com.izhengyin.demo.concurrent.part5;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.ToString;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
+/**
+ * @author zhengyin zhengyinit@outlook.com
+ * Created on 2020-09-07 18:52
+ */
+public class AtomicReferenceTest {
+
+    public static void main(String[] args){
+        Coord coord = new Coord(1.1,5.1);
+
+        Coord newCoord = new Coord(2.1,6.1);
+        AtomicReference<Coord> coordAtomicReference1 = new AtomicReference<>(coord);
+        //成功
+        System.out.println("compareAndSet ["+coordAtomicReference1.compareAndSet(coord,newCoord)+"] , new value "+coordAtomicReference1.get());
+
+        Coord coord2 = new Coord(1.1,5.1);
+        AtomicReference<Coord> coordAtomicReference2 = new AtomicReference<>(coord);
+        //失败
+        System.out.println("compareAndSet ["+coordAtomicReference2.compareAndSet(coord2,newCoord)+"] , equals ["+(coord2.equals(coord))+"] , new value "+coordAtomicReference2.get());
+    }
+
+    @Data
+    @ToString
+    @AllArgsConstructor
+    private static class Coord {
+        private double x;
+        private double y;
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()){
+                return false;
+            }
+            Coord coord = (Coord) o;
+            return Double.compare(coord.x, x) == 0 &&
+                    Double.compare(coord.y, y) == 0;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(x, y);
+        }
+    }
+
+}
+
+```
+以上代码输出
+``` 
+compareAndSet [true] , new value AtomicReferenceTest.Coord(x=2.1, y=6.1)
+compareAndSet [false] , equals [true] , new value AtomicReferenceTest.Coord(x=1.1, y=5.1)
+```
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 > 未完，待续
