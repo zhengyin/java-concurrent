@@ -658,29 +658,26 @@ JDK为我们提供了一系列的锁的工具类，它们被定义在 java.util.
 ReentrantLock 实现了Lock的接口，在ReentrantLock中定义了3个内部类，Sync类是对AQS的抽象接口的实现，FairSync 、 NonfairSync 继承自 Sync 实现了 Sync 类抽象出的lock方法，实现了公平锁与非公平锁的加锁策略。 
 ReentrantLock 在实例化时可以通过构造函数指定是否使用公平锁，接下来我们通过示例与源码介绍可重入锁、公平锁、非公平锁的具体实现。
 
-下面这个示例代码演示了，可重入锁、公平锁、非公平锁的一些表现上的区别。
+
+下面我们通过源码来分析产生这些现象的原因。
+
+1. 可重入锁的实现逻辑
+
+
 ``` 
-package com.izhengyin.demo.concurrent.part6;
-
-import com.izhengyin.demo.concurrent.SleepUtils;
-import java.util.concurrent.locks.ReentrantLock;
-import java.util.stream.IntStream;
-
-/**
- * @author zhengyin zhengyinit@outlook.com
- * Created on 2020-09-14 17:15
- */
-public class ReentrantLockTest {
-
-    public static void main(String[] args){
-        System.out.println(">>> >>> >>> >>> >>> >>> >>> >>> reentrant");
-        reentrant();
-        System.out.println(">>> >>> >>> >>> >>> >>> >>> >>> nonFair");
-        nonFair();
-        SleepUtils.sleep(1);
-        System.out.println(">>> >>> >>> >>> >>> >>> >>> >>> fair");
-        fair();
+    else if (current == getExclusiveOwnerThread()) {
+        int nextc = c + acquires;
+        if (nextc < 0)
+            throw new Error("Maximum lock count exceeded");
+        setState(nextc);
+        return true;
     }
+```
+
+可重入锁通过构造函数来指定是否使用在公平锁与非公平锁，在公平锁 tryAcquire 以及非公平锁 nonfairTryAcquire 方法内都有以上一个判断分支用于实现线程的重入。
+上面这个代码的意思是，当当前的线程是获得锁的线程（getExclusiveOwnerThread）时，将锁状态计数器加1(acquires=1),如果小于0（int 溢出了）就抛异常，也就是说最大能够加到 Integer.MAX_VALUE。
+每一次释放锁的会将 state - 1 ，直到 state = 0 时其它线程才可以拿到锁。下面这段代码演示了可重入锁的特点。
+``` 
 
     /**
      * 当占有锁的线程获取到的锁都释放以后，其它等待线程才可以获取锁。
@@ -717,55 +714,9 @@ public class ReentrantLockTest {
 
         }
     }
-
-
-
-    /**
-     * 乱序执行
-     */
-    private static void nonFair(){
-        ReentrantLock nonFairLock = new ReentrantLock();
-        IntStream.rangeClosed(0,10).forEach(i -> {
-                    new Thread(() -> {
-                        nonFairLock.lock();
-                        try {
-                            System.out.println(Thread.currentThread().getName()+" -> "+i);
-                        }finally {
-                            nonFairLock.unlock();
-                        }
-                    },"thread-"+i).start();
-                });
-
-
-    }
-
-    /**
-     * 有序执行
-     */
-    private static void fair(){
-        ReentrantLock failLock = new ReentrantLock(true);
-        IntStream.rangeClosed(0,10).forEach(i -> {
-            new Thread(() -> {
-                failLock.lock();
-                try {
-                    System.out.println(Thread.currentThread().getName()+" -> "+i);
-                }finally {
-                    failLock.unlock();
-                }
-            },"thread-"+i).start();
-        });
-
-    }
-
-}
-
 ```
-
 输出
-
-```
-/Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/bin/java -Dfile.encoding=UTF-8 -classpath /Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/jre/lib/charsets.jar:/Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/jre/lib/deploy.jar:/Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/jre/lib/ext/cldrdata.jar:/Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/jre/lib/ext/dnsns.jar:/Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/jre/lib/ext/jaccess.jar:/Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/jre/lib/ext/jfxrt.jar:/Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/jre/lib/ext/localedata.jar:/Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/jre/lib/ext/nashorn.jar:/Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/jre/lib/ext/sunec.jar:/Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/jre/lib/ext/sunjce_provider.jar:/Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/jre/lib/ext/sunpkcs11.jar:/Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/jre/lib/ext/zipfs.jar:/Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/jre/lib/javaws.jar:/Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/jre/lib/jce.jar:/Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/jre/lib/jfr.jar:/Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/jre/lib/jfxswt.jar:/Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/jre/lib/jsse.jar:/Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/jre/lib/management-agent.jar:/Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/jre/lib/plugin.jar:/Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/jre/lib/resources.jar:/Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/jre/lib/rt.jar:/Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/lib/ant-javafx.jar:/Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/lib/dt.jar:/Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/lib/javafx-mx.jar:/Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/lib/jconsole.jar:/Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/lib/packager.jar:/Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/lib/sa-jdi.jar:/Library/Java/JavaVirtualMachines/jdk1.8.0_65.jdk/Contents/Home/lib/tools.jar:/Users/zhengyin/project/my/java-concurrent/target/classes:/Users/zhengyin/.m2/repository/org/projectlombok/lombok/1.18.10/lombok-1.18.10.jar:/Users/zhengyin/.m2/repository/org/springframework/spring-core/5.2.0.RELEASE/spring-core-5.2.0.RELEASE.jar:/Users/zhengyin/.m2/repository/org/springframework/spring-jcl/5.2.0.RELEASE/spring-jcl-5.2.0.RELEASE.jar:/Users/zhengyin/.m2/repository/org/slf4j/slf4j-api/1.7.20/slf4j-api-1.7.20.jar:/Users/zhengyin/.m2/repository/ch/qos/logback/logback-classic/1.2.3/logback-classic-1.2.3.jar:/Users/zhengyin/.m2/repository/ch/qos/logback/logback-core/1.2.3/logback-core-1.2.3.jar com.izhengyin.demo.concurrent.part6.ReentrantLockTest
->>> >>> >>> >>> >>> >>> >>> >>> reentrant
+``` 
 1600316511297 Get Lock main
 1600316511297 Get Lock main
 1600316511297 Get Lock main
@@ -790,19 +741,31 @@ public class ReentrantLockTest {
 1600316512441 unLock main
 1600316512442 Get Lock Thread-0
 1600316512442 unLock Thread-0
->>> >>> >>> >>> >>> >>> >>> >>> nonFair
-thread-0 -> 0
-thread-1 -> 1
-thread-2 -> 2
-thread-3 -> 3
-thread-4 -> 4
-thread-5 -> 5
-thread-6 -> 6
-thread-7 -> 7
-thread-8 -> 8
-thread-9 -> 9
-thread-10 -> 10
->>> >>> >>> >>> >>> >>> >>> >>> fair
+```
+
+2. 公平锁的实现
+
+在公平锁 tryAcquire 获取锁时，会先检查是否有等待队列 hasQueuedPredecessors() 如果有等待队列线程竞争锁将失败，然后根据AQS的实现，线程将被加入到等待队尾。
+下面这段代码中，线程将按照先后顺序依次执行。
+
+``` 
+    private static void fair(){
+        ReentrantLock failLock = new ReentrantLock(true);
+        IntStream.rangeClosed(0,10).forEach(i -> {
+            new Thread(() -> {
+                failLock.lock();
+                try {
+                    System.out.println(Thread.currentThread().getName()+" -> "+i);
+                }finally {
+                    failLock.unlock();
+                }
+            },"thread-"+i).start();
+        });
+
+    }
+```
+输出
+``` 
 thread-0 -> 0
 thread-1 -> 1
 thread-2 -> 2
@@ -816,7 +779,49 @@ thread-9 -> 9
 thread-10 -> 10
 ```
 
-下面我们通过源码来分析产生这些现象的原因。
+3. 非公平锁的实现
+
+在非公平锁 nonfairTryAcquire 方法中，会先进行一次 CAS 来竞争锁，如果竞争失败才会被加入等待队列，如果竞争成功就插队执行。
+
+``` 
+    if (compareAndSetState(0, acquires)) {
+        setExclusiveOwnerThread(current);
+        return true;
+    }
+```
+
+在下面这段代码中，执行时乱序的。
+
+``` 
+ private static void nonFair(){
+        ReentrantLock nonFairLock = new ReentrantLock();
+        IntStream.rangeClosed(0,10).forEach(i -> {
+                    new Thread(() -> {
+                        nonFairLock.lock();
+                        try {
+                            System.out.println(Thread.currentThread().getName()+" -> "+i);
+                        }finally {
+                            nonFairLock.unlock();
+                        }
+                    },"thread-"+i).start();
+                });
 
 
+    }
+```
+输出
+
+``` 
+thread-0 -> 0
+thread-2 -> 2
+thread-1 -> 1
+thread-3 -> 3
+thread-4 -> 4
+thread-5 -> 5
+thread-6 -> 6
+thread-7 -> 7
+thread-8 -> 8
+thread-9 -> 9
+thread-10 -> 10
+```
 > 未完，待续

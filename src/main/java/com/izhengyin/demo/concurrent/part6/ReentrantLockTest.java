@@ -24,6 +24,7 @@ public class ReentrantLockTest {
      * 当占有锁的线程获取到的锁都释放以后，其它等待线程才可以获取锁。
      */
     public static void reentrant(){
+
         ReentrantLock lock = new ReentrantLock();
         IntStream.rangeClosed(0,10).forEach(i -> {
             lock.lock();
