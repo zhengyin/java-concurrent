@@ -824,4 +824,99 @@ thread-8 -> 8
 thread-9 -> 9
 thread-10 -> 10
 ```
+
+#### 读锁写锁
+
+读锁写锁是一对锁，在使用时通常配合使用。我们通过下面两段代码来看看它们的特点
+
+* 读锁可以被多个线程获取,但当写锁被占有时，读锁的获取都将被阻塞。
+
+``` 
+    private static void readLock(){
+        ReentrantReadWriteLock wrl = new ReentrantReadWriteLock();
+        ExecutorService executorService = Executors.newFixedThreadPool(5);
+        IntStream.rangeClosed(1,10)
+                .forEach(i -> executorService.execute(() -> {
+                    wrl.readLock().lock();
+                    try {
+                        System.out.println(System.currentTimeMillis()+" "+Thread.currentThread().getName()+" Get Read Lock");
+                        //mock delay
+                        SleepUtils.sleep(100);
+                    }finally {
+                        wrl.readLock().unlock();
+
+                        if(i  == 5){
+                            wrl.writeLock().lock();
+                            try {
+                                System.out.println(System.currentTimeMillis()+" "+Thread.currentThread().getName()+" Get Write Lock");
+                                SleepUtils.sleep(3000);
+                            }finally {
+                                wrl.writeLock().unlock();
+                            }
+                        }
+                    }
+                }));
+        executorService.shutdown();
+    }
+```
+输出
+``` 
+1600476416552 pool-1-thread-3 Get Read Lock
+1600476416553 pool-1-thread-5 Get Read Lock
+1600476416552 pool-1-thread-4 Get Read Lock
+1600476416552 pool-1-thread-1 Get Read Lock
+1600476416552 pool-1-thread-2 Get Read Lock
+1600476416654 pool-1-thread-2 Get Read Lock
+1600476416757 pool-1-thread-5 Get Write Lock
+ --- 阻塞3秒，写锁释放后读锁才能被获取
+1600476419757 pool-1-thread-4 Get Read Lock
+1600476419757 pool-1-thread-1 Get Read Lock
+1600476419757 pool-1-thread-3 Get Read Lock
+1600476419757 pool-1-thread-2 Get Read Lock
+```
+
+* 写锁的获取是独占的,可重入的。除此之外，如果当前线程已获得读锁，写锁的获取同样也会被阻塞。
+``` 
+private static void writeLock(){
+        ReentrantReadWriteLock wrl = new ReentrantReadWriteLock();
+        ExecutorService executorService = Executors.newFixedThreadPool(5);
+        //独占的
+        IntStream.rangeClosed(1,10)
+                .forEach(i -> executorService.execute(() -> {
+                    wrl.writeLock().lock();
+                    try {
+                        System.out.println(System.currentTimeMillis()+" "+Thread.currentThread().getName()+" Get Write Lock");
+                        //mock delay
+                        SleepUtils.sleep(100);
+                    }finally {
+                        wrl.writeLock().unlock();
+                    }
+                }));
+        executorService.shutdown();
+
+        SleepUtils.sleep(1000);
+
+
+        wrl.readLock().lock();
+        try {
+            System.out.println("Main Get Read Lock");
+        }finally {
+            //注释以后将被阻塞
+            wrl.readLock().unlock();
+        }
+
+        wrl.writeLock().lock();
+        try {
+            System.out.println("Main Get Write Lock");
+        }finally {
+            wrl.writeLock().unlock();
+        }
+
+    }
+
+```
+上面这段代码，如果将 wrl.readLock().unlock() 注释，也就是读锁如果没有释放，写锁获取将被阻塞。
+
+
+
 > 未完，待续
