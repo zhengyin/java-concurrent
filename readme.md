@@ -920,10 +920,6 @@ private static void writeLock(){
 下面是一个通过读写锁封装并发Cache类的一个小例子，通过对读写使用不同的所策略，兼顾读的并发性，也兼顾写操作对应读操作的可见性。
 
 ``` 
-    /**
-     * 
-     * 通过对读写使用不同的所策略，兼顾读的并发性，也兼顾写操作对应读操作的可见性。
-     */
     private final static class ConcurrentCache {
         private final Map<String,Object> map = new HashMap<>();
         private final ReentrantReadWriteLock wrl = new ReentrantReadWriteLock();
