@@ -917,6 +917,66 @@ private static void writeLock(){
 ```
 上面这段代码，如果将 wrl.readLock().unlock() 注释，也就是读锁如果没有释放，写锁获取将被阻塞。
 
+下面是一个通过读写锁封装并发Cache类的一个小例子，通过对读写使用不同的所策略，兼顾读的并发性，也兼顾写操作对应读操作的可见性。
 
+``` 
+    /**
+     * 
+     * 通过对读写使用不同的所策略，兼顾读的并发性，也兼顾写操作对应读操作的可见性。
+     */
+    private final static class ConcurrentCache {
+        private final Map<String,Object> map = new HashMap<>();
+        private final ReentrantReadWriteLock wrl = new ReentrantReadWriteLock();
+        private final ReentrantReadWriteLock.ReadLock readLock;
+        private final ReentrantReadWriteLock.WriteLock writeLock;
+
+        public ConcurrentCache(){
+            this.readLock = wrl.readLock();
+            this.writeLock = wrl.writeLock();
+        }
+
+        /**
+         * 读的时候加读锁，多线程读不阻塞
+         * @param key
+         * @return
+         */
+        public Object get(String key){
+            readLock.lock();
+            try {
+                return map.get(key);
+            }finally {
+                readLock.unlock();
+            }
+        }
+
+        /**
+         * 写的时候加写锁，写锁同时阻塞读锁，这样保证写完后的最新数据会第一时间被读到
+         * @param key
+         * @param supplier
+         * @return
+         */
+        public Object set(String key , Supplier<Object> supplier){
+            writeLock.lock();
+            try {
+                return map.put(key, supplier.get());
+            }finally {
+                writeLock.unlock();
+            }
+        }
+
+        /**
+         * 同 set
+         */
+        public void  clear(){
+            writeLock.lock();
+            try {
+                map.clear();
+            }finally {
+                writeLock.unlock();
+            }
+
+        }
+    }
+```
 
 > 未完，待续

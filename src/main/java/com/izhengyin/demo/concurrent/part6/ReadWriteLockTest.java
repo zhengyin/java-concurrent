@@ -91,6 +91,8 @@ public class ReadWriteLockTest {
 
     }
 
+
+
     private static void lruCacheIssue(){
         LruCache<String,Object> concurrentLruCache = new ConcurrentLruCache<String, Object>(64, v -> v.hashCode());
         System.out.println("ConcurrentLruCache 总耗时 ： "+benchmarkLruCache(1000,65,concurrentLruCache).stream()
@@ -129,6 +131,7 @@ public class ReadWriteLockTest {
 
     /**
      * cache
+     * 通过对读写使用不同的所策略，兼顾读的并发性，也兼顾写操作对应读操作的可见性。
      */
     private final static class ConcurrentCache {
         private final Map<String,Object> map = new HashMap<>();
@@ -141,6 +144,11 @@ public class ReadWriteLockTest {
             this.writeLock = wrl.writeLock();
         }
 
+        /**
+         * 读的时候加读锁，多线程读不阻塞
+         * @param key
+         * @return
+         */
         public Object get(String key){
             readLock.lock();
             try {
@@ -150,6 +158,12 @@ public class ReadWriteLockTest {
             }
         }
 
+        /**
+         * 写的时候加写锁，写锁同时阻塞读锁，这样保证写完后的最新数据会第一时间被读到
+         * @param key
+         * @param supplier
+         * @return
+         */
         public Object set(String key , Supplier<Object> supplier){
             writeLock.lock();
             try {
@@ -159,6 +173,9 @@ public class ReadWriteLockTest {
             }
         }
 
+        /**
+         * 同 set
+         */
         public void  clear(){
             writeLock.lock();
             try {
