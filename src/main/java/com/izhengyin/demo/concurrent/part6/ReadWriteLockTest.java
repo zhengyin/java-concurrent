@@ -16,9 +16,9 @@ import java.util.stream.IntStream;
  */
 public class ReadWriteLockTest {
     public static void main(String[] args){
-        readLock();
+    //    readLock();
     //   writeLock();
-    //    lruCacheIssue();
+        lruCacheIssue();
     }
 
     /**
@@ -95,13 +95,13 @@ public class ReadWriteLockTest {
 
     private static void lruCacheIssue(){
         LruCache<String,Object> concurrentLruCache = new ConcurrentLruCache<String, Object>(64, v -> v.hashCode());
-        System.out.println("ConcurrentLruCache 总耗时 ： "+benchmarkLruCache(1000,65,concurrentLruCache).stream()
+        System.out.println("ConcurrentLruCache 总耗时 ： "+benchmarkLruCache(1000,75,concurrentLruCache).stream()
            //     .peek(System.out::println)
                 .mapToLong(v -> v)
                 .sum());
 
         LruCache<String,Object> optimizeConcurrentLruCache = new OptimizeConcurrentLruCache<String, Object>(64, v -> v.hashCode());
-        System.out.println("OptimizeConcurrentLruCache 总耗时 ： "+benchmarkLruCache(1000,65,optimizeConcurrentLruCache).stream()
+        System.out.println("OptimizeConcurrentLruCache 总耗时 ： "+benchmarkLruCache(1000,75,optimizeConcurrentLruCache).stream()
            //     .peek(System.out::println)
                 .mapToLong(v -> v)
                 .sum());
@@ -216,6 +216,7 @@ public class ReadWriteLockTest {
 
             this.lock.readLock().lock();
             try {
+                //大于一半时，
                 if (this.queue.size() < this.maxSize / 2) {
                     V cached = this.cache.get(key);
                     if (cached != null) {

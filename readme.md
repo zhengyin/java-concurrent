@@ -1,7 +1,7 @@
 # Java 并发编程
 
 ## 多线程编程产生的问题？
-> 通常在聊及并发编程时，通常是在说多线程编程，因此我们首先从问题出发看下多线程编程有哪些问题？
+> 首先从问题出发看下多线程编程有哪些问题？
 ``` 
 package com.izhengyin.demo.concurrent.part1;
 import com.izhengyin.demo.concurrent.SleepUtils;
@@ -973,6 +973,16 @@ private static void writeLock(){
 
         }
     }
+```
+
+> 锁的使用是一个非常细致的事情，如果使用不当会导致系统性能急剧下降，下面我们通过分析Spring框架中一个锁使用的错误的一个BUG来总结一下Lock这部分的知识。 关于BUG的细节，可以Google " MimeTypeUtils LRU cache " 关键词找到。
+
+> 本文将关键的代码摘出。
+
+* 有问题的版本
+ 
+```  
+
 ```
 
 > 未完，待续
