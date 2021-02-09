@@ -17,8 +17,8 @@ import java.util.stream.IntStream;
 public class ReadWriteLockTest {
     public static void main(String[] args){
     //    readLock();
-    //   writeLock();
-        lruCacheIssue();
+       writeLock();
+
     }
 
     /**
@@ -78,7 +78,7 @@ public class ReadWriteLockTest {
         try {
             System.out.println("Main Get Read Lock");
         }finally {
-            //注释以后将被阻塞
+            //注释以后主线程将被阻塞，因为无法获取写锁
             wrl.readLock().unlock();
         }
 
@@ -91,43 +91,6 @@ public class ReadWriteLockTest {
 
     }
 
-
-
-    private static void lruCacheIssue(){
-        LruCache<String,Object> concurrentLruCache = new ConcurrentLruCache<String, Object>(64, v -> v.hashCode());
-        System.out.println("ConcurrentLruCache 总耗时 ： "+benchmarkLruCache(1000,75,concurrentLruCache).stream()
-           //     .peek(System.out::println)
-                .mapToLong(v -> v)
-                .sum());
-
-        LruCache<String,Object> optimizeConcurrentLruCache = new OptimizeConcurrentLruCache<String, Object>(64, v -> v.hashCode());
-        System.out.println("OptimizeConcurrentLruCache 总耗时 ： "+benchmarkLruCache(1000,75,optimizeConcurrentLruCache).stream()
-           //     .peek(System.out::println)
-                .mapToLong(v -> v)
-                .sum());
-    }
-
-
-    private static List<Long> benchmarkLruCache(int loop , int sample , LruCache<String,Object> lruCache){
-        List<Long> times = new ArrayList<>(loop + 1);
-        CountDownLatch countDownLatch = new CountDownLatch(loop);
-        ExecutorService executor = Executors.newFixedThreadPool(100);
-        IntStream.rangeClosed(1,loop)
-                .forEach(i ->
-                        executor.execute(() -> {
-                            long s = System.currentTimeMillis();
-                            IntStream.rangeClosed(1,sample)
-                                    .forEach(n -> lruCache.get(n+""));
-                            times.add((System.currentTimeMillis() - s));
-                            countDownLatch.countDown();
-                        })
-                );
-        executor.shutdown();
-        try {
-            countDownLatch.await();
-        }catch (InterruptedException e){}
-        return times;
-    }
 
     /**
      * cache
@@ -187,152 +150,6 @@ public class ReadWriteLockTest {
         }
     }
 
-    /**
-     * 并发的Lur Cache
-     * @param <K>
-     * @param <V>
-     */
-    private static class ConcurrentLruCache<K, V> implements LruCache<K, V>{
-
-        private final int maxSize;
-
-        private final ConcurrentLinkedQueue<K> queue = new ConcurrentLinkedQueue<>();
-
-        private final ConcurrentHashMap<K, V> cache = new ConcurrentHashMap<>();
-
-        private final ReadWriteLock lock = new ReentrantReadWriteLock();
-
-        private final Function<K, V> generator;
-
-        public ConcurrentLruCache(int maxSize, Function<K, V> generator) {
-            Assert.isTrue(maxSize > 0, "LRU max size should be positive");
-            Assert.notNull(generator, "Generator function should not be null");
-            this.maxSize = maxSize;
-            this.generator = generator;
-        }
-
-        @Override
-        public V get(K key) {
-
-            this.lock.readLock().lock();
-            try {
-                //大于一半时，
-                if (this.queue.size() < this.maxSize / 2) {
-                    V cached = this.cache.get(key);
-                    if (cached != null) {
-                        return cached;
-                    }
-                }
-                else if (this.queue.remove(key)) {
-                    this.queue.add(key);
-                    return this.cache.get(key);
-                }
-            }
-            finally {
-                this.lock.readLock().unlock();
-            }
 
 
-
-            this.lock.writeLock().lock();
-            try {
-
-
-                // retrying in case of concurrent reads on the same key
-                if (this.queue.remove(key)) {
-                    this.queue.add(key);
-                    return this.cache.get(key);
-                }
-                if (this.queue.size() == this.maxSize) {
-                    K leastUsed = this.queue.poll();
-                    if (leastUsed != null) {
-                        this.cache.remove(leastUsed);
-                    }
-                }
-                V value = this.generator.apply(key);
-                this.queue.add(key);
-                this.cache.put(key, value);
-                return value;
-            }
-            finally {
-                this.lock.writeLock().unlock();
-            }
-        }
-    }
-
-
-    private static class OptimizeConcurrentLruCache<K, V> implements LruCache<K, V>{
-
-        private final int maxSize;
-
-        private final ConcurrentLinkedDeque<K> queue = new ConcurrentLinkedDeque<>();
-
-        private final ConcurrentHashMap<K, V> cache = new ConcurrentHashMap<>();
-
-        private final ReadWriteLock lock;
-
-        private final Function<K, V> generator;
-
-        private volatile int size = 0;
-
-        public OptimizeConcurrentLruCache(int maxSize, Function<K, V> generator) {
-            Assert.isTrue(maxSize > 0, "LRU max size should be positive");
-            Assert.notNull(generator, "Generator function should not be null");
-            this.maxSize = maxSize;
-            this.generator = generator;
-            this.lock = new ReentrantReadWriteLock();
-        }
-
-        @Override
-        public V get(K key) {
-            V cached = this.cache.get(key);
-            if (cached != null) {
-                if (this.size < this.maxSize) {
-                    return cached;
-                }
-                this.lock.readLock().lock();
-                try {
-                    if (this.queue.removeLastOccurrence(key)) {
-                        this.queue.offer(key);
-                    }
-                    return cached;
-                }
-                finally {
-                    this.lock.readLock().unlock();
-                }
-            }
-            this.lock.writeLock().lock();
-            try {
-                // Retrying in case of concurrent reads on the same key
-                cached = this.cache.get(key);
-                if (cached  != null) {
-                    if (this.queue.removeLastOccurrence(key)) {
-                        this.queue.offer(key);
-                    }
-                    return cached;
-                }
-                // Generate value first, to prevent size inconsistency
-                V value = this.generator.apply(key);
-                int cacheSize = this.size;
-                if (cacheSize == this.maxSize) {
-                    K leastUsed = this.queue.poll();
-                    if (leastUsed != null) {
-                        this.cache.remove(leastUsed);
-                        cacheSize--;
-                    }
-                }
-                this.queue.offer(key);
-                this.cache.put(key, value);
-                this.size = cacheSize + 1;
-                return value;
-            }
-            finally {
-                this.lock.writeLock().unlock();
-            }
-        }
-    }
-
-    private interface LruCache<K,V> {
-        V get(K key);
-    }
 }
