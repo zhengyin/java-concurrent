@@ -13,17 +13,7 @@ import java.util.stream.IntStream;
 public class ConcurrentLinkedQueueTest {
     private final static ConcurrentLinkedQueue<Integer> QUEUE = new ConcurrentLinkedQueue<>();
     public static void main(String[] args) {
-
-        QUEUE.add(1);
-        QUEUE.add(2);
-        QUEUE.add(3);
-        QUEUE.add(0);
-
-        System.out.println(QUEUE);
-
-
-    //    removeTest();
-
+        removeTest();
     }
 
 
